@@ -76,41 +76,44 @@ def find_top_n_prompt(similarity, content, n):
     return prompt
 
 
-def rag_predict(current_model, chatbot, user_input, messages):
-    if len(chatbot) == 0:
-        query_embedding = text_embedding_model.encode(input)
-        vector = vector_database['embedding']
-        content = vector_database['raw_data']
+def query_knowledge(user_input_):
+    url = "http://127.0.0.1:8001/text_embedding/"
+    headers = {'Content-Type': 'application/json'}
+    data = {'model_name': "bge-reranker-large", 'query': user_input_, "top_n": "15"}
+    payload = json.dumps(data)
 
-        similarity = np.dot(vector, query_embedding)
-        prompt = find_top_n_prompt(similarity, content, n=2)
-        input = prompt + input
-
-    chatbot.append((parse_text(input), ""))
-
-    for response, history, past_key_values in llm_model.stream_chat(tokenizer, input, history, past_key_values=past_key_values,
-                                                                return_past_key_values=True,
-                                                                max_length=max_length, top_p=top_p,
-                                                                temperature=temperature):
-        chatbot[-1] = (parse_text(input), parse_text(response))
-
-        yield chatbot, history, past_key_values
+    x = requests.post(url, headers=headers, data=payload)
+    response = x.json()
+    back_know = response['background_knowledge']
+    return back_know
 
 
-def vanilla_predict(model_name_, chatbot_, user_input_, message_list):
+
+def rag_predict(current_model, chatbot, textbox, user_input, messages):
+    if len(messages) == 0:
+        back_know = query_knowledge(user_input)
+        textbox = '请根据以下背景知识作答: {}'.format(back_know)
+        messages = [textbox, "好的"]
+    chatbot.append((parse_text(user_input), ""))
+    response, history = invoke_llm_model(current_model, user_input, messages)
+    chatbot[-1] = (parse_text(user_input), parse_text(response))
+    return chatbot, textbox, history
+
+
+def vanilla_predict(model_name_, chatbot_, _, user_input_, message_list):
     chatbot_.append((parse_text(user_input_), ""))
     response, history = invoke_llm_model(model_name_, user_input_, message_list)
     chatbot_[-1] = (parse_text(user_input_), parse_text(response))
-    return chatbot_, history
+    return chatbot_, _, history
 
 
-def predict(query_type, current_model, chatbot, user_input, messages):
+def predict(query_type, current_model, chatbot, textbox, user_input, messages):
     query_type = query_type.lower()
     current_model = current_model.lower()
     if query_type == 'vanilla':
-        return vanilla_predict(current_model, chatbot, user_input, messages)
+        return vanilla_predict(current_model, chatbot, textbox, user_input, messages)
     else:
-        return rag_predict(current_model, chatbot, user_input, messages)
+        return rag_predict(current_model, chatbot, textbox, user_input, messages)
 
 
 def invoke_llm_model(model_name_, user_input_, message_list):
@@ -150,6 +153,7 @@ with gr.Blocks() as demo:
     query_type = gr.State("Vanilla")
     gr.HTML("""<h1 align="center">LLM Test</h1>""")
 
+    textbox = gr.Textbox(label="RAG Prompt", info="RAG Prompt", lines=3, value="None", interactive=False)
     chatbot = gr.Chatbot()
     with gr.Row():
         with gr.Column(scale=4):
@@ -158,7 +162,7 @@ with gr.Blocks() as demo:
                 query_select_box = gr.Dropdown(["Vanilla", "RAG"], label="Query Type")
                 user_input = gr.Textbox(show_label=False, placeholder="Input...", lines=10)
             with gr.Column(min_width=32, scale=1):
-                submitBtn1 = gr.Button("Submit (raw model)", variant="primary")
+                submitBtn1 = gr.Button("Submit", variant="primary")
         with gr.Column(scale=1):
             emptyBtn = gr.Button("Clear History")
             # max_length = gr.Slider(0, 32768, value=8192, step=1.0, label="Maximum length", interactive=True)
@@ -169,8 +173,8 @@ with gr.Blocks() as demo:
     model_select_box.change(get_value, [model_select_box], [current_model])
     query_select_box.change(get_value, [query_select_box], [query_type])
 
-    submitBtn1.click(predict, [query_type, current_model, chatbot, user_input, messages],
-                     [chatbot, messages], show_progress=True)
+    submitBtn1.click(predict, [query_type, current_model, chatbot, textbox, user_input, messages],
+                     [chatbot, textbox, messages], show_progress=True)
     submitBtn1.click(reset_user_input, [], [user_input])
     emptyBtn.click(reset_state, outputs=[chatbot, messages], show_progress=True)
 
