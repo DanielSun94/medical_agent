@@ -85,7 +85,7 @@ def invoke_bge_reranker_large(model, json_post_list):
 
 def invoke_ernie_bot(json_post_list):
     url = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions'
-    with open("../resource/ernie_bot/ernie_bot_access_token.yaml", 'r', encoding='utf-8-sig') as f:
+    with open("resource/ernie_bot/ernie_bot_access_token.yaml", 'r', encoding='utf-8-sig') as f:
         resource = yaml.load(f, yaml.FullLoader)
 
     access_token = resource['access_token']
