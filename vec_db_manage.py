@@ -26,7 +26,7 @@ save_folder = os.path.abspath('./resource/knowledge/target/')
 
 def query_embedding_server(data, model_name):
     target_port = args['embedding_server_port']
-    url = "http://127.0.0.1:{}/text_embedding/{}".format(target_port, model_name)
+    url = "http://127.0.0.1:{}/text_embedding/query/{}".format(target_port, model_name)
     headers = {'Content-Type': "application/json"}
     payload = json.dumps({'text': data})
     x = requests.post(url, headers=headers, data=payload)
@@ -37,6 +37,7 @@ def query_embedding_server(data, model_name):
 
 
 def initialize():
+    logger.info("initialize start")
     model_name = args['embedding_model']
     file_list = os.listdir(knowledge_folder)
     target_folder = os.path.join(save_folder, model_name)
@@ -55,11 +56,7 @@ def generate_embedding_db(model_name, source, target, batch_size=2048):
     embedding_list = []
     with open(source, 'r', encoding='utf-8-sig') as f:
         csv_reader = csv.reader(f)
-        idx = 0
-        for line in csv_reader:
-            if idx == 0:
-                idx += 1
-                continue
+        for line in islice(csv_reader, 1, None):
             key, content = line
             data_list.append([key, content])
 
@@ -127,14 +124,15 @@ async def get_embedding(request: Request):
     available_models = os.listdir(save_folder)
     model_name = json_post_list.get("model_name")
     query = json_post_list.get("query")
+
     top_n = int(json_post_list.get("top_n"))
     assert model_name in available_models
     assert isinstance(query, str)
 
     embedding_mat, knowledge_list = vector_db['vectors'], vector_db['knowledge_map']
-    query_embedding = np.array(query_embedding_server(query, model_name))
-    similarity_mat = np.matmul(embedding_mat, query_embedding)
-
+    query_embedding = np.squeeze(np.array(query_embedding_server([query], model_name)))
+    embedding_norm, query_norm = np.linalg.norm(embedding_mat, axis=1), np.linalg.norm(query_embedding)
+    similarity_mat = np.matmul(embedding_mat, query_embedding) / (embedding_norm * query_norm)
 
     top_n_indices = get_top_n_idx(similarity_mat, top_n)
     prompt_list = [knowledge_list[idx[0]]['content'] for idx in top_n_indices]

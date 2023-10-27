@@ -5,6 +5,9 @@ from transformers.generation.utils import GenerationConfig
 import uvicorn, json, datetime
 from utils import load_chatglm_model_on_gpus
 from sentence_transformers import SentenceTransformer
+from modelscope.models import Model
+from modelscope.utils.constant import Tasks
+from modelscope.pipelines import pipeline
 import argparse
 import requests
 import yaml
@@ -21,16 +24,16 @@ parser.add_argument('--local_model_name', help='', type=str)
 parser.add_argument('--port', help='', type=str)
 args = vars(parser.parse_args())
 
-cache_folder = '/home/disk/sunzhoujian/hugginface'
-
+huggingface_cache_folder = '/home/disk/sunzhoujian/hugginface'
+modelscope_cache_folder = '/home/disk/sunzhoujian/modelscope'
 
 def load_model(model_name_list, visible_gpu_list):
     available_model_dict = dict()
     for name in model_name_list:
         if name == 'chatglm2-6b':
             backbone = "THUDM/chatglm2-6b"
-            tokenizer = AutoTokenizer.from_pretrained(backbone, trust_remote_code=True, cache_dir=cache_folder)
-            llm_model = AutoModel.from_pretrained(backbone, trust_remote_code=True, cache_dir=cache_folder)
+            tokenizer = AutoTokenizer.from_pretrained(backbone, trust_remote_code=True, cache_dir=huggingface_cache_folder)
+            llm_model = AutoModel.from_pretrained(backbone, trust_remote_code=True, cache_dir=huggingface_cache_folder)
             if len(visible_gpu_list) > 1:
                 llm_model = load_chatglm_model_on_gpus(llm_model, visible_gpu_list)
             else:
@@ -38,15 +41,19 @@ def load_model(model_name_list, visible_gpu_list):
             available_model_dict[name] = tokenizer, llm_model
         elif name == 'baichuan2-13b-chat':
             tokenizer = AutoTokenizer.from_pretrained(
-                "baichuan-inc/Baichuan2-13B-Chat", use_fast=False, trust_remote_code=True, cache_dir=cache_folder)
+                "baichuan-inc/Baichuan2-13B-Chat", use_fast=False, trust_remote_code=True, cache_dir=huggingface_cache_folder)
             llm_model = AutoModelForCausalLM.from_pretrained(
                 "baichuan-inc/Baichuan2-13B-Chat", device_map="auto", torch_dtype=torch.bfloat16,
-                trust_remote_code=True, cache_dir=cache_folder)
+                trust_remote_code=True, cache_dir=huggingface_cache_folder)
             llm_model.generation_config = GenerationConfig.from_pretrained("baichuan-inc/Baichuan2-13B-Chat")
             available_model_dict[name] = tokenizer, llm_model
         elif name == 'bge-reranker-large':
-            model = SentenceTransformer('BAAI/bge-reranker-large', cache_folder=cache_folder).to('cuda:1')
+            model = SentenceTransformer('BAAI/bge-reranker-large', cache_folder=huggingface_cache_folder).to('cuda:1')
             available_model_dict[name] = model
+        elif name == 'corom-chinese-medical':
+            model_id = "damo/nlp_corom_sentence-embedding_chinese-base-medical"
+            pipeline_se = pipeline(Tasks.sentence_embedding, model=model_id)
+            available_model_dict[name] = pipeline_se
         else:
             raise ValueError('')
     return available_model_dict
@@ -70,6 +77,23 @@ local_model_dict = load_model(local_models, gpu_list)
 def invoke_bge_reranker_large(model, json_post_list):
     text_list = json_post_list.get('text')
     embedding = model.encode(text_list)
+    arr_list = embedding.tolist()
+    json_str = json.dumps(arr_list)
+    time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    answer = {
+        "embedding": json_str,
+        "status": 200,
+        "time": time
+    }
+    log = "[" + time + "]  Embedding Generate Success"
+    print(log)
+    return answer
+
+
+
+def invoke_corom(model, json_post_list):
+    text_list = json_post_list.get('text')
+    embedding = model({'source_sentence': text_list})['text_embedding']
     arr_list = embedding.tolist()
     json_str = json.dumps(arr_list)
     time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -199,16 +223,22 @@ def invoke_baichuan2_13b(models, json_post_list):
     return answer
 
 
-@app.post("/text_embedding/{model_name}")
-async def invoke_model(model_name: str, request: Request):
+@app.post("/text_embedding/{text_type}/{model_name}")
+async def invoke_text_embedding_model(text_type: str, model_name: str, request: Request):
     json_post_raw = await request.json()
     json_post = json.dumps(json_post_raw)
     json_post_list = json.loads(json_post)
 
+    assert text_type == 'query' or text_type == 'content'
+
     if model_name in local_model_dict:
-        assert model_name == 'bge-reranker-large'
         model = local_model_dict[model_name]
-        response = invoke_bge_reranker_large(model, json_post_list)
+        if model_name == 'bge-reranker-large':
+            response = invoke_bge_reranker_large(model, json_post_list)
+        elif model_name == 'corom-chinese-medical':
+            response = invoke_corom(model, json_post_list)
+        else:
+            raise ValueError('')
     else:
         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         response = {
@@ -220,7 +250,7 @@ async def invoke_model(model_name: str, request: Request):
 
 
 @app.post("/chat/{model_name}")
-async def invoke_model(model_name: str, request: Request):
+async def invoke_llm_model(model_name: str, request: Request):
     json_post_raw = await request.json()
     json_post = json.dumps(json_post_raw)
     json_post_list = json.loads(json_post)

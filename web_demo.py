@@ -79,7 +79,7 @@ def find_top_n_prompt(similarity, content, n):
 def query_knowledge(user_input_):
     url = "http://127.0.0.1:8001/text_embedding/"
     headers = {'Content-Type': 'application/json'}
-    data = {'model_name': "bge-reranker-large", 'query': user_input_, "top_n": "15"}
+    data = {'model_name': args['model_name'], 'query': user_input_, "top_n": "15"}
     payload = json.dumps(data)
 
     x = requests.post(url, headers=headers, data=payload)
