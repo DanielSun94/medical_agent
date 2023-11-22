@@ -1,6 +1,12 @@
 import os
 import logging
+import argparse
 
+
+huggingface_cache_folder = '/home/disk/sunzhoujian/hugginface'
+knowledge_source_folder = os.path.abspath('./resource/knowledge/source')
+knowledge_target_folder = os.path.abspath('./resource/knowledge/target/')
+modelscope_cache_folder = '/home/sunzhoujian/modelscope'
 
 
 log_folder = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'resource', 'log')
@@ -22,3 +28,11 @@ console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--visible_gpu_ids', help='', default='0', type=str)
+parser.add_argument('--llm_name', help='', type=str)
+parser.add_argument('--embedding_model_name', help='', type=str)
+parser.add_argument('--port', help='', type=str)
+args = vars(parser.parse_args())
