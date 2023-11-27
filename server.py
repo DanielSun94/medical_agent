@@ -3,11 +3,20 @@ import uvicorn, json
 from llm import invoke_llm_model
 from vec_db import query_background_knowledge
 from config import logger, args
+from fastapi.middleware.cors import CORSMiddleware
 
 
 logger.info('llm sever start')
 llm_name = args['llm_name']
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 或者是你的前端应用的域名列表
+    allow_credentials=True,
+    allow_methods=["*"],  # 允许所有方法
+    allow_headers=["*"],  # 允许所有头部
+)
 valid_model = args
 
 """
@@ -24,8 +33,11 @@ async def rag_agent_predict(llm_model_name: str, embedding_model_name: str, requ
     json_post_list = json.loads(json_post)
     history = json_post_list.get('history')
     user_utterance = json_post_list.get('input')
-    background_knowledge = json_post_list.get('background_knowledge')
 
+    assert isinstance(user_utterance, str)
+    assert all(isinstance(item, str) for item in history)
+
+    background_knowledge = ''
     if len(history) == 0:
         background_knowledge = query_background_knowledge(user_utterance, embedding_model_name, 'agent_knowledge')
         textbox = '请你扮演一名医生，请严格根据以下决策过程，从问题1开始向我提问，了解我的情况，最终得出结论。每轮对话允许只问一个问题，' \
@@ -38,6 +50,10 @@ async def rag_agent_predict(llm_model_name: str, embedding_model_name: str, requ
 
     if len(history) == 2:
         history[0] = user_utterance
+
+    assert isinstance(background_knowledge, str)
+    assert isinstance(response, str)
+    assert all(isinstance(item, str) for item in history)
     return {
         "response": response,
         'history': history,
@@ -52,19 +68,27 @@ async def rag_qa_predict(llm_model_name: str, embedding_model_name: str, request
     json_post_list = json.loads(json_post)
     history = json_post_list.get('history')
     user_utterance = json_post_list.get('input')
-    # background_knowledge = json_post_list.get('background_knowledge')
 
-    back_knowledge = query_background_knowledge(user_utterance, embedding_model_name, 'background_knowledge')
-    back_knowledge = '请根据以下背景知识作答: {}'.format(back_knowledge)
-    user_utterance_input = back_knowledge + '\n' + back_knowledge
+    assert isinstance(user_utterance, str)
+    assert all(isinstance(item, str) for item in history)
+
+    # context_list = (history + [user_utterance])
+    # context_list.reverse()
+    # query = '\n'.join(context_list)
+    background_knowledge = query_background_knowledge(user_utterance, embedding_model_name, 'background_knowledge')
+    background_knowledge = '请根据以下背景知识作答: {}'.format(background_knowledge)
+    user_utterance_input = background_knowledge + '\n' + user_utterance
 
     response, history = invoke_llm_model(llm_model_name, user_utterance_input, history)
     # 在输出里把prompt屏蔽掉
     history[-2] = user_utterance
+    assert isinstance(background_knowledge, str)
+    assert isinstance(response, str)
+    assert all(isinstance(item, str) for item in history)
     return {
         "response": response,
         'history': history,
-        'background_knowledge': back_knowledge
+        'background_knowledge': background_knowledge
     }
 
 

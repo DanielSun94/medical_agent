@@ -143,7 +143,7 @@ def load_vector():
     return db
 
 
-def get_top_1_idx(one_d_array, query_type, knowledge_list):
+def get_top_n_idx(one_d_array, query_type, knowledge_list, n=1):
     target_list = []
     for i, item in enumerate(one_d_array):
         target_list.append([i, item])
@@ -156,6 +156,7 @@ def get_top_1_idx(one_d_array, query_type, knowledge_list):
         if query_type == "agent_knowledge" and doc == "agent_knowledge":
             target_idx = idx
             break
+        # 之所以这么写是因为background_knowledge的doc name存在差异
         if query_type == 'background_knowledge' and doc != 'agent_knowledge':
             target_idx = idx
             break
@@ -182,6 +183,6 @@ def query_background_knowledge(query, model_name, query_type):
     embedding_norm, query_norm = np.linalg.norm(embedding_mat, axis=1), np.linalg.norm(query_embedding)
     similarity_mat = np.matmul(embedding_mat, query_embedding) / (embedding_norm * query_norm)
 
-    target_idx = get_top_1_idx(similarity_mat, query_type, knowledge_list)
+    target_idx = get_top_n_idx(similarity_mat, query_type, knowledge_list)
     prompt = knowledge_list[target_idx]['content']
     return prompt
